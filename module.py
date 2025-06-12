@@ -1,6 +1,6 @@
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.metrics import Accuracy
+from torchmetrics import Accuracy
 
 from cifar10_models.densenet import densenet121, densenet161, densenet169
 from cifar10_models.googlenet import googlenet
@@ -30,12 +30,13 @@ all_classifiers = {
 class CIFAR10Module(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
-        self.hparams = hparams
+        self.hparams.update(vars(hparams))
 
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.accuracy = Accuracy()
+        self.accuracy = Accuracy(task="MULTICLASS", num_classes=10)
 
         self.model = all_classifiers[self.hparams.classifier]
+        self.len_train_dataloader = None
 
     def forward(self, batch):
         images, labels = batch
@@ -67,7 +68,7 @@ class CIFAR10Module(pl.LightningModule):
             momentum=0.9,
             nesterov=True,
         )
-        total_steps = self.hparams.max_epochs * len(self.train_dataloader())
+        total_steps = self.hparams.max_epochs * self.len_train_dataloader
         scheduler = {
             "scheduler": WarmupCosineLR(
                 optimizer, warmup_epochs=total_steps * 0.3, max_epochs=total_steps

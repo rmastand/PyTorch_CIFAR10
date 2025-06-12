@@ -12,7 +12,7 @@ from tqdm import tqdm
 class CIFAR10Data(pl.LightningDataModule):
     def __init__(self, args):
         super().__init__()
-        self.hparams = args
+        self.hparams.update(vars(args))
         self.mean = (0.4914, 0.4822, 0.4465)
         self.std = (0.2471, 0.2435, 0.2616)
 
@@ -54,7 +54,7 @@ class CIFAR10Data(pl.LightningDataModule):
                 T.Normalize(self.mean, self.std),
             ]
         )
-        dataset = CIFAR10(root=self.hparams.data_dir, train=True, transform=transform)
+        dataset = CIFAR10(root=self.hparams.data_dir, train=True, transform=transform, download=False)
         dataloader = DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,
@@ -63,6 +63,7 @@ class CIFAR10Data(pl.LightningDataModule):
             drop_last=True,
             pin_memory=True,
         )
+
         return dataloader
 
     def val_dataloader(self):

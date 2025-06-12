@@ -1,6 +1,8 @@
 import pytorch_lightning as pl
 import torch
 from torchmetrics import Accuracy
+from torchvision.transforms import v2
+
 
 from cifar10_models.densenet import densenet121, densenet161, densenet169
 from cifar10_models.googlenet import googlenet
@@ -9,6 +11,28 @@ from cifar10_models.mobilenetv2 import mobilenet_v2
 from cifar10_models.resnet import resnet18, resnet34, resnet50
 from cifar10_models.vgg import vgg11_bn, vgg13_bn, vgg16_bn, vgg19_bn
 from schduler import WarmupCosineLR
+
+"""
+"
+" DEFINE AUGMENTATIONS
+"
+"""        
+transforms = v2.Compose([
+    v2.RandomResizedCrop(size=(32, 32), scale = (0.4, 1)),
+    v2.RandomHorizontalFlip(p=0.5),
+    v2.RandomApply([v2.ColorJitter( brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8),
+    v2.RandomApply([v2.Grayscale(num_output_channels=3)], p=0.2),
+    v2.RandomApply([v2.GaussianBlur(kernel_size=5)], p=0.5),
+    v2.RandomSolarize(p=0.1, threshold=0.75294117647),
+    v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  
+ ])
+
+
+def off_diagonal(x):
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
+
 
 all_classifiers = {
     "vgg11_bn": vgg11_bn(),
@@ -32,33 +56,64 @@ class CIFAR10Module(pl.LightningModule):
         super().__init__()
         self.hparams.update(vars(hparams))
 
-        self.criterion = torch.nn.CrossEntropyLoss()
-        self.accuracy = Accuracy(task="MULTICLASS", num_classes=10)
+        #self.criterion = torch.nn.CrossEntropyLoss()
+        #self.accuracy = Accuracy(task="MULTICLASS", num_classes=10)
 
         self.model = all_classifiers[self.hparams.classifier]
         self.len_train_dataloader = None
 
     def forward(self, batch):
         images, labels = batch
-        predictions = self.model(images)
-        loss = self.criterion(predictions, labels)
-        accuracy = self.accuracy(predictions, labels)
-        return loss, accuracy * 100
+
+        # generate augmentations
+        x = transforms(images)
+        y = transforms(images)
+
+        # evaluate model on augs
+        x = self.model(x)
+        y = self.model(y)
+
+        # VICReg loss
+        x = x - x.mean(dim=0)
+        y = y - y.mean(dim=0)
+
+        std_x = torch.sqrt(x.var(dim=0) + 0.0001)
+        std_y = torch.sqrt(y.var(dim=0) + 0.0001)
+        std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
+
+        cov_x = (x.T @ x) / (self.args.batch_size - 1)
+        cov_y = (y.T @ y) / (self.args.batch_size - 1)
+        cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
+            self.num_features
+        ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
+
+        loss = (
+            self.args.sim_coeff * repr_loss
+            + self.args.std_coeff * std_loss
+            + self.args.cov_coeff * cov_loss
+        )
+        return loss, repr_loss, std_loss, cov_loss
 
     def training_step(self, batch, batch_nb):
-        loss, accuracy = self.forward(batch)
+        loss, repr_loss, std_loss, cov_loss = self.forward(batch)
         self.log("loss/train", loss)
-        self.log("acc/train", accuracy)
+        self.log("repr_loss/train", repr_loss)
+        self.log("std_loss/train", std_loss)
+        self.log("cov_loss/train", cov_loss)
+        #self.log("acc/train", accuracy)
         return loss
 
     def validation_step(self, batch, batch_nb):
-        loss, accuracy = self.forward(batch)
+        loss, repr_loss, std_loss, cov_loss = self.forward(batch)
         self.log("loss/val", loss)
-        self.log("acc/val", accuracy)
+        self.log("repr_loss/val", repr_loss)
+        self.log("std_loss/val", std_loss)
+        self.log("cov_loss/val", cov_loss)
+        #self.log("acc/val", accuracy)
 
     def test_step(self, batch, batch_nb):
         loss, accuracy = self.forward(batch)
-        self.log("acc/test", accuracy)
+        #self.log("acc/test", accuracy)
 
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(

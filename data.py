@@ -48,13 +48,13 @@ class CIFAR10Data(pl.LightningDataModule):
     def train_dataloader(self):
         transform = T.Compose(
             [
-                T.RandomCrop(32, padding=4),
-                T.RandomHorizontalFlip(),
+             #   T.RandomCrop(32, padding=4),
+             #   T.RandomHorizontalFlip(),
                 T.ToTensor(),
-                T.Normalize(self.mean, self.std),
+              #  T.Normalize(self.mean, self.std),
             ]
         )
-        dataset = CIFAR10(root=self.hparams.data_dir, train=True, transform=transform, download=False)
+        dataset = CIFAR10(root=self.hparams.data_dir, train=True, transform=transform, download=True)
         dataloader = DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,
@@ -70,10 +70,10 @@ class CIFAR10Data(pl.LightningDataModule):
         transform = T.Compose(
             [
                 T.ToTensor(),
-                T.Normalize(self.mean, self.std),
+               # T.Normalize(self.mean, self.std),
             ]
         )
-        dataset = CIFAR10(root=self.hparams.data_dir, train=False, transform=transform)
+        dataset = CIFAR10(root=self.hparams.data_dir, train=False, transform=transform, download=True)
         dataloader = DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,

@@ -2,13 +2,15 @@ import pytorch_lightning as pl
 import torch
 from torchmetrics import Accuracy
 from torchvision.transforms import v2
+import torch.nn.functional as F
+
 
 
 from cifar10_models.densenet import densenet121, densenet161, densenet169
 from cifar10_models.googlenet import googlenet
 from cifar10_models.inception import inception_v3
 from cifar10_models.mobilenetv2 import mobilenet_v2
-from cifar10_models.resnet import resnet18, resnet34, resnet50
+from cifar10_models.resnet import resnet18, resnet34, resnet50, Projector
 from cifar10_models.vgg import vgg11_bn, vgg13_bn, vgg16_bn, vgg19_bn
 from schduler import WarmupCosineLR
 
@@ -35,45 +37,51 @@ def off_diagonal(x):
 
 
 all_classifiers = {
-    "vgg11_bn": vgg11_bn(),
-    "vgg13_bn": vgg13_bn(),
-    "vgg16_bn": vgg16_bn(),
-    "vgg19_bn": vgg19_bn(),
-    "resnet18": resnet18(),
-    "resnet34": resnet34(),
-    "resnet50": resnet50(),
-    "densenet121": densenet121(),
-    "densenet161": densenet161(),
-    "densenet169": densenet169(),
-    "mobilenet_v2": mobilenet_v2(),
-    "googlenet": googlenet(),
-    "inception_v3": inception_v3(),
-}
-
+            "vgg11_bn": vgg11_bn(),
+            "vgg13_bn": vgg13_bn(),
+            "vgg16_bn": vgg16_bn(),
+            "vgg19_bn": vgg19_bn(),
+            "resnet18": resnet18(),
+            "resnet34": resnet34(),
+            "resnet50": resnet50(),
+            "densenet121": densenet121(),
+            "densenet161": densenet161(),
+            "densenet169": densenet169(),
+            "mobilenet_v2": mobilenet_v2(),
+            "googlenet": googlenet(),
+            "inception_v3": inception_v3(),
+        }
 
 class CIFAR10Module(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.hparams.update(vars(hparams))
 
+
         #self.criterion = torch.nn.CrossEntropyLoss()
         #self.accuracy = Accuracy(task="MULTICLASS", num_classes=10)
 
         self.model = all_classifiers[self.hparams.classifier]
+        self.projector = Projector(self.hparams, self.model.output_dimension)
         self.len_train_dataloader = None
+        self.num_features = int(self.hparams.mlp.split("-")[-1])
 
     def forward(self, batch):
         images, labels = batch
+        
 
         # generate augmentations
         x = transforms(images)
         y = transforms(images)
 
         # evaluate model on augs
-        x = self.model(x)
-        y = self.model(y)
+        x = self.projector(self.model(x))
+        y = self.projector(self.model(y))
 
         # VICReg loss
+
+        repr_loss = F.mse_loss(x, y)
+        
         x = x - x.mean(dim=0)
         y = y - y.mean(dim=0)
 
@@ -81,34 +89,34 @@ class CIFAR10Module(pl.LightningModule):
         std_y = torch.sqrt(y.var(dim=0) + 0.0001)
         std_loss = torch.mean(F.relu(1 - std_x)) / 2 + torch.mean(F.relu(1 - std_y)) / 2
 
-        cov_x = (x.T @ x) / (self.args.batch_size - 1)
-        cov_y = (y.T @ y) / (self.args.batch_size - 1)
+        cov_x = (x.T @ x) / (self.hparams.batch_size - 1)
+        cov_y = (y.T @ y) / (self.hparams.batch_size - 1)
         cov_loss = off_diagonal(cov_x).pow_(2).sum().div(
             self.num_features
         ) + off_diagonal(cov_y).pow_(2).sum().div(self.num_features)
 
         loss = (
-            self.args.sim_coeff * repr_loss
-            + self.args.std_coeff * std_loss
-            + self.args.cov_coeff * cov_loss
+            self.hparams.sim_coeff * repr_loss
+            + self.hparams.std_coeff * std_loss
+            + self.hparams.cov_coeff * cov_loss
         )
         return loss, repr_loss, std_loss, cov_loss
 
     def training_step(self, batch, batch_nb):
         loss, repr_loss, std_loss, cov_loss = self.forward(batch)
         self.log("loss/train", loss)
-        self.log("repr_loss/train", repr_loss)
-        self.log("std_loss/train", std_loss)
-        self.log("cov_loss/train", cov_loss)
+        self.log("invariance_loss/train", repr_loss)
+        self.log("variance_loss/train", std_loss)
+        self.log("covariance_loss/train", cov_loss)
         #self.log("acc/train", accuracy)
         return loss
 
     def validation_step(self, batch, batch_nb):
         loss, repr_loss, std_loss, cov_loss = self.forward(batch)
         self.log("loss/val", loss)
-        self.log("repr_loss/val", repr_loss)
-        self.log("std_loss/val", std_loss)
-        self.log("cov_loss/val", cov_loss)
+        self.log("invariance_loss/val", repr_loss)
+        self.log("variance_loss/val", std_loss)
+        self.log("covariance_loss/val", cov_loss)
         #self.log("acc/val", accuracy)
 
     def test_step(self, batch, batch_nb):

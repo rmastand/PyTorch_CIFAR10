@@ -135,7 +135,7 @@ class ResNet(nn.Module):
         self,
         block,
         layers,
-        num_classes=10,
+        num_classes=10, 
         zero_init_residual=False,
         groups=1,
         width_per_group=64,
@@ -181,7 +181,7 @@ class ResNet(nn.Module):
             block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2]
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.output_dimension = 512 * block.expansion
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -254,9 +254,20 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = x.reshape(x.size(0), -1)
-        x = self.fc(x)
 
         return x
+
+def Projector(args, embedding):
+    mlp_spec = f"{embedding}-{args.mlp}"
+    layers = []
+    f = list(map(int, mlp_spec.split("-")))
+    for i in range(len(f) - 2):
+        layers.append(nn.Linear(f[i], f[i + 1]))
+        layers.append(nn.BatchNorm1d(f[i + 1]))
+        layers.append(nn.ReLU(True))
+    layers.append(nn.Linear(f[-2], f[-1], bias=False))
+    return nn.Sequential(*layers)
+
 
 
 def _resnet(arch, block, layers, pretrained, progress, device, **kwargs):

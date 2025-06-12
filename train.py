@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 
 from data import CIFAR10Data
@@ -26,6 +26,7 @@ def main(args):
             logger = TensorBoardLogger(args.data_dir, name=args.classifier)
 
         checkpoint_loss = ModelCheckpoint(dirpath = f"{args.data_dir}/extraction/best_models/", filename="val_loss", monitor="loss/val", mode="min", verbose=1, auto_insert_metric_name=True)
+        lr_monitor = LearningRateMonitor(logging_interval='step')
 
     
 
@@ -38,7 +39,7 @@ def main(args):
             enable_model_summary=True,
             log_every_n_steps=1,
             max_epochs=args.max_epochs,
-            callbacks = [checkpoint_loss],
+            callbacks = [checkpoint_loss, lr_monitor],
             precision=args.precision,
             default_root_dir=f"{args.data_dir}/extraction/"
         )
@@ -73,7 +74,7 @@ if __name__ == "__main__":
 
     # TRAINER args
     parser.add_argument("--classifier", type=str, default="resnet18")
-    parser.add_argument("--mlp", type=str, default='128-128-128')
+    parser.add_argument("--mlp", type=str, default='1024-1024-1024')
 
     parser.add_argument("--pretrained", type=int, default=0, choices=[0, 1])
 

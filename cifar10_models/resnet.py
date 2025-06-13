@@ -141,11 +141,13 @@ class ResNet(nn.Module):
         width_per_group=64,
         replace_stride_with_dilation=None,
         norm_layer=None,
+        is_extractor=False
     ):
         super(ResNet, self).__init__()
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
+        self.is_extractor = is_extractor
 
         self.inplanes = 64
         self.dilation = 1
@@ -181,7 +183,11 @@ class ResNet(nn.Module):
             block, 512, layers[3], stride=2, dilate=replace_stride_with_dilation[2]
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        if self.is_extractor:
+            self.output_dimension = 512 * block.expansion
+            print("Making extractor network (no last fcn)")
+        else:
+            self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -254,9 +260,26 @@ class ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = x.reshape(x.size(0), -1)
-        x = self.fc(x)
+        
+        if not self.is_extractor:
+            x = self.fc(x)
 
         return x
+
+
+
+def Projector(args, embedding):
+    mlp_spec = f"{embedding}-{args.mlp}"
+    layers = []
+    f = list(map(int, mlp_spec.split("-")))
+    for i in range(len(f) - 2):
+        layers.append(nn.Linear(f[i], f[i + 1]))
+        layers.append(nn.BatchNorm1d(f[i + 1]))
+        layers.append(nn.ReLU(True))
+    layers.append(nn.Linear(f[-2], f[-1], bias=False))
+    return nn.Sequential(*layers)
+
+
 
 
 def _resnet(arch, block, layers, pretrained, progress, device, **kwargs):

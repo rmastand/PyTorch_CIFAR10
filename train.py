@@ -3,11 +3,11 @@ from argparse import ArgumentParser
 
 import torch
 from pytorch_lightning import Trainer, seed_everything
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 
 from data import CIFAR10Data
-from module import CIFAR10Module
+from module import CIFAR10ModuleClassifier, CIFAR10ModuleExtractor
 
 
 def main(args):
@@ -19,12 +19,20 @@ def main(args):
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
 
         if args.logger == "wandb":
-            logger = WandbLogger(name=args.classifier, project="classification", save_dir = f"{args.data_dir}/classification/", log_model="all")
+            logger = WandbLogger(name=args.classifier, project=args.project, save_dir = f"{args.save_dir}/{args.project}/", log_model="all")
+            logger.experiment.config.update(args)
         elif args.logger == "tensorboard":
             logger = TensorBoardLogger(args.data_dir, name=args.classifier)
 
-        checkpoint_acc = ModelCheckpoint(dirpath = f"{args.data_dir}/classification/best_models/", filename="val_acc", monitor="acc/val", mode="max", verbose=1, auto_insert_metric_name=True)
-        checkpoint_loss = ModelCheckpoint(dirpath = f"{args.data_dir}/classification/best_models/", filename="val_loss", monitor="loss/val", mode="min", verbose=1, auto_insert_metric_name=True)
+        lr_monitor = LearningRateMonitor(logging_interval='step')
+        checkpoint_loss = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename="val_loss", monitor="loss/val", mode="min", verbose=1, auto_insert_metric_name=True)
+        callbacks = [checkpoint_loss, lr_monitor]
+
+        if args.train_classifier:
+            checkpoint_acc = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename="val_acc", monitor="acc/val", mode="max", verbose=1, auto_insert_metric_name=True)
+            callbacks = [checkpoint_acc, checkpoint_loss, lr_monitor]
+        
+        
 
 
         trainer = Trainer(
@@ -36,12 +44,16 @@ def main(args):
             enable_model_summary=True,
             log_every_n_steps=1,
             max_epochs=args.max_epochs,
-            callbacks = [checkpoint_acc, checkpoint_loss],
+            callbacks = callbacks,
             precision=args.precision,
-            default_root_dir=f"{args.data_dir}/classification/"
+            default_root_dir=f"{args.save_dir}/{args.project}/"
         )
 
-        model = CIFAR10Module(args)
+        if args.train_classifier:
+            model = CIFAR10ModuleClassifier(args)
+        else:
+            model = CIFAR10ModuleExtractor(args)
+
         data = CIFAR10Data(args)
 
         model.len_train_dataloader = len(data.train_dataloader())
@@ -57,7 +69,8 @@ def main(args):
             trainer.test(model, data.test_dataloader())
         else:
             trainer.fit(model, data)
-            trainer.test(model, data.test_dataloader())
+            if args.train_classifier:
+                trainer.test(model, data.test_dataloader())
 
 
 if __name__ == "__main__":
@@ -65,6 +78,7 @@ if __name__ == "__main__":
 
     # PROGRAM level args
     parser.add_argument("--data_dir", type=str, default="/global/cfs/cdirs/m3246/rmastand/polymathic/cifar10/")
+    parser.add_argument("--save_dir", type=str, default="/global/cfs/cdirs/m3246/rmastand/polymathic/")
     parser.add_argument("--download_weights", type=int, default=0, choices=[0, 1])
     parser.add_argument("--test_phase", type=int, default=0, choices=[0, 1])
     parser.add_argument("--dev", type=int, default=0, choices=[0, 1])
@@ -82,6 +96,18 @@ if __name__ == "__main__":
 
     parser.add_argument("--learning_rate", type=float, default=1e-2)
     parser.add_argument("--weight_decay", type=float, default=1e-2)
+
+    # OTHER ARGS
+    parser.add_argument("--project", type=str)
+    parser.add_argument("--train_classifier", action="store_true")
+    parser.add_argument("--use_embedding_space", action="store_true")
+    parser.add_argument("--path_to_embedding_network", type=str, default="/global/cfs/cdirs/m3246/rmastand/polymathic/extractor/best_models/val_loss.ckpt")
+
+    parser.add_argument("--mlp", type=str, default="1024-1024-1024")
+    parser.add_argument("--sim-coeff", type=float, default=25.0, help='Invariance regularization loss coefficient')
+    parser.add_argument("--std-coeff", type=float, default=25.0, help='Variance regularization loss coefficient')
+    parser.add_argument("--cov-coeff", type=float, default=1.0, help='Covariance regularization loss coefficient')
+
 
     args = parser.parse_args()
     main(args)

@@ -15,6 +15,7 @@ class CIFAR10Data(pl.LightningDataModule):
         self.hparams.update(vars(args))
         self.mean = (0.4914, 0.4822, 0.4465)
         self.std = (0.2471, 0.2435, 0.2616)
+        self.normalize_data = args.train_classifier
 
     def download_weights():
         url = (
@@ -46,15 +47,25 @@ class CIFAR10Data(pl.LightningDataModule):
             print("Unzip file successful!")
 
     def train_dataloader(self):
-        transform = T.Compose(
-            [
-                T.RandomCrop(32, padding=4),
-                T.RandomHorizontalFlip(),
-                T.ToTensor(),
-                T.Normalize(self.mean, self.std),
-            ]
+
+        if self.normalize_data:
+            transform = T.Compose(
+                [
+                    T.RandomCrop(32, padding=4),
+                    T.RandomHorizontalFlip(),
+                    T.ToTensor(),
+                    T.Normalize(self.mean, self.std),
+                ]
         )
-        dataset = CIFAR10(root=self.hparams.data_dir, train=True, transform=transform, download=False)
+            suffix = "normalized"
+        else:
+            transform = T.Compose(
+                [
+                    T.ToTensor(),
+                ]
+        )
+            suffix = "raw"
+        dataset = CIFAR10(root=f"{self.hparams.data_dir}/{suffix}/", train=True, transform=transform, download=True)
         dataloader = DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,
@@ -67,13 +78,22 @@ class CIFAR10Data(pl.LightningDataModule):
         return dataloader
 
     def val_dataloader(self):
-        transform = T.Compose(
-            [
-                T.ToTensor(),
-                T.Normalize(self.mean, self.std),
-            ]
-        )
-        dataset = CIFAR10(root=self.hparams.data_dir, train=False, transform=transform)
+        if self.normalize_data:
+            transform = T.Compose(
+                [
+                    T.ToTensor(),
+                    T.Normalize(self.mean, self.std),
+                ]
+            )
+            suffix = "normalized"
+        else:
+            transform = T.Compose(
+                [
+                    T.ToTensor(),
+                ]
+            )
+            suffix = "raw"
+        dataset = CIFAR10(root=f"{self.hparams.data_dir}/{suffix}/", train=False, transform=transform, download=True)
         dataloader = DataLoader(
             dataset,
             batch_size=self.hparams.batch_size,

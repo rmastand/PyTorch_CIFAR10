@@ -4,7 +4,7 @@ import torch.nn as nn
 
 class densenet1d(nn.Module):
     def __init__(self, 
-                 layers=[1024,512,256,64],
+                 layers=[2048, 4086, 2048, 1024, 512, 256, 128, 32],
                  n_inputs=512,
                  n_classes=10,
                  device="cpu"):

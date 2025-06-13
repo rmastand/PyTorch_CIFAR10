@@ -17,19 +17,20 @@ def main(args):
     else:
         seed_everything(0)
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+        os.environ["WANDB_CACHE_DIR"] = "/pscratch/sd/r/rmastand/"
 
         if args.logger == "wandb":
-            logger = WandbLogger(name=args.classifier, project=args.project, save_dir = f"{args.save_dir}/{args.project}/", log_model="all")
+            logger = WandbLogger(name=args.name, project=args.project, save_dir = f"{args.save_dir}/{args.project}/", log_model="all")
             logger.experiment.config.update(args)
         elif args.logger == "tensorboard":
-            logger = TensorBoardLogger(args.data_dir, name=args.classifier)
+            logger = TensorBoardLogger(args.data_dir, name=args.name)
 
         lr_monitor = LearningRateMonitor(logging_interval='step')
-        checkpoint_loss = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename="val_loss", monitor="loss/val", mode="min", verbose=1, auto_insert_metric_name=True)
+        checkpoint_loss = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename=f"{args.name}_val_loss_"+"{epoch:02d}", monitor="loss/val", mode="min", verbose=1, auto_insert_metric_name=True)
         callbacks = [checkpoint_loss, lr_monitor]
 
         if args.train_classifier:
-            checkpoint_acc = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename="val_acc", monitor="acc/val", mode="max", verbose=1, auto_insert_metric_name=True)
+            checkpoint_acc = ModelCheckpoint(dirpath = f"{args.save_dir}/{args.project}/best_models/", filename=f"{args.name}_val_acc_"+"{epoch:02d}", monitor="acc/val", mode="max", verbose=1, auto_insert_metric_name=True)
             callbacks = [checkpoint_acc, checkpoint_loss, lr_monitor]
         
         
@@ -85,12 +86,12 @@ if __name__ == "__main__":
     parser.add_argument( "--logger", type=str, default="wandb", choices=["tensorboard", "wandb"])
 
     # TRAINER args
-    parser.add_argument("--classifier", type=str, default="resnet18")
+    parser.add_argument("--classifier", type=str, default="resnet18", choices=["resnet18", "densenet1d"])
     parser.add_argument("--pretrained", type=int, default=0, choices=[0, 1])
 
     parser.add_argument("--precision", type=int, default=32, choices=[16, 32])
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--max_epochs", type=int, default=20)
+    parser.add_argument("--max_epochs", type=int, default=100)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--gpu_id", type=str, default="0")
 
@@ -99,13 +100,14 @@ if __name__ == "__main__":
 
     # OTHER ARGS
     parser.add_argument("--project", type=str)
+    parser.add_argument("--name", type=str, default="test")
     parser.add_argument("--train_classifier", action="store_true")
     parser.add_argument("--use_embedding_space", action="store_true")
-    parser.add_argument("--path_to_embedding_network", type=str, default="/global/cfs/cdirs/m3246/rmastand/polymathic/extractor/best_models/val_loss.ckpt")
+    parser.add_argument("--path_to_embedding_network", type=str, default="/global/cfs/cdirs/m3246/rmastand/polymathic/extractor/best_models/val_loss-v2.ckpt")
 
-    parser.add_argument("--mlp", type=str, default="1024-1024-1024")
-    parser.add_argument("--sim-coeff", type=float, default=25.0, help='Invariance regularization loss coefficient')
-    parser.add_argument("--std-coeff", type=float, default=25.0, help='Variance regularization loss coefficient')
+    parser.add_argument("--mlp", type=str, default="4096-4096-4096")
+    parser.add_argument("--sim-coeff", type=float, default=1.0, help='Invariance regularization loss coefficient')
+    parser.add_argument("--std-coeff", type=float, default=1.0, help='Variance regularization loss coefficient')
     parser.add_argument("--cov-coeff", type=float, default=1.0, help='Covariance regularization loss coefficient')
 
 

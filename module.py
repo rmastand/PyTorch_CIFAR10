@@ -59,7 +59,6 @@ class CIFAR10ModuleClassifier(pl.LightningModule):
         if self.use_embedding_space:
             images = self.embedding_network(images)
 
-        
         predictions = self.model(images)
         loss = self.criterion(predictions, labels)
         accuracy = self.accuracy(predictions, labels)
@@ -104,12 +103,12 @@ class CIFAR10ModuleClassifier(pl.LightningModule):
 "
 """        
 transforms = v2.Compose([
-    v2.RandomResizedCrop(size=(32, 32), scale = (0.4, 1)),
+    v2.RandomResizedCrop(size=(32, 32), scale = (0.08, 1)),
     v2.RandomHorizontalFlip(p=0.5),
     v2.RandomApply([v2.ColorJitter( brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)], p=0.8),
     v2.RandomApply([v2.Grayscale(num_output_channels=3)], p=0.2),
-    v2.RandomApply([v2.GaussianBlur(kernel_size=5)], p=0.5),
-    v2.RandomSolarize(p=0.1, threshold=0.75294117647),
+    v2.RandomApply([v2.GaussianBlur(kernel_size=3)], p=0.5),
+    v2.RandomSolarize(p=0.1, threshold=0.50980392156),
     v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  
  ])
 
@@ -193,7 +192,7 @@ class CIFAR10ModuleExtractor(pl.LightningModule):
         total_steps = self.hparams.max_epochs * self.len_train_dataloader
         scheduler = {
             "scheduler": WarmupCosineLR(
-                optimizer, warmup_epochs=total_steps * 0.3, max_epochs=total_steps
+                optimizer, warmup_epochs= self.len_train_dataloader*10, max_epochs=total_steps
             ),
             "interval": "step",
             "name": "learning_rate",
